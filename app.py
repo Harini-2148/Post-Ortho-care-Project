@@ -1,112 +1,86 @@
 import os
+import sys
 import dash
-from dash import html, dcc
+import dash_bootstrap_components as dbc
+from dash import html
 import pandas as pd
-from navbar import create_navbar
-from graph.daily import get_daily_graph
-from graph.weekly import get_weekly_graph
-from graph.ninety_days import get_ninety_days_graph
-from graph.violin import get_violin_graph
-from graph.strip import get_strip_graph
-from graph.heatmap import get_heatmap_graph
-from graph.funnel import get_funnel_graph
-from graph.waterfall import get_waterfall_graph
-from graph.moving_avg import get_moving_average_graph, register_callbacks as register_ma_callbacks
-from graph.sine_slider import get_sine_slider_graph, register_callbacks as register_sine_callbacks
-from flask import jsonify
+import pyodbc
 
-# Define correct log file path
-log_file = os.path.join(os.getcwd(), "data_log", "search_data.log")
+# Azure SQL Database Connection Details
+server = 'sqldbpoc1.database.windows.net'  # Replace with your Azure SQL Server Name
+database = 'aismetadata'  # Your database name
+username = 'saadmin'  # Your Azure SQL username
+password = 'Photon~1~'  # Your password 
 
-def load_log_data(file_path):
-    if not os.path.exists(file_path):
-        print(f"\u274c Error: Log file not found -> {file_path}")
-        return pd.DataFrame()
-    
-    data = []
-    with open(file_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-    
-    for line in lines:
-        parts = line.strip().split("] ")
-        if len(parts) < 2:
-            continue
-        
-        timestamp = parts[0].strip("[")  
-        details = parts[1].split(", ")
+def fetch_data():
+    """Fetches search data from Azure SQL database."""
+    try:
+        conn = pyodbc.connect(
+            f'DRIVER={{ODBC Driver 17 for SQL Server}};'
+            f'SERVER={server};'
+            f'DATABASE={database};'
+            f'UID={username};'
+            f'PWD={password}'
+        )
+        query = "SELECT id, search_type, search_tag, role, timestamp, result_count, search_duration FROM dbo.search_data"
+        df = pd.read_sql(query, conn)
+        conn.close()
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        return df
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return pd.DataFrame()  # Return an empty DataFrame on error
 
-        id_value = details[0].split(": ")[-1] if len(details) > 0 else None
-        role = details[1].split(": ")[-1] if len(details) > 1 else None
-        result_count = details[2].split(": ")[-1] if len(details) > 2 else None
-        search_duration = details[3].split(": ")[-1] if len(details) > 3 else None
+# Adjust system path for proper imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-        data.append([timestamp, id_value, role, result_count, search_duration])
+# Import necessary modules
+from data_csv.navbar_key import create_navbar
+from data_csv.daily import get_daily_graph
+from data_csv.weekly import get_weekly_graph
+from data_csv.ninety_days import get_ninety_days_graph
 
-    df = pd.DataFrame(data, columns=["timestamp", "id", "role", "result_count", "search_duration"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-    df["result_count"] = pd.to_numeric(df["result_count"], errors="coerce")
-    df["search_duration"] = pd.to_numeric(df["search_duration"], errors="coerce")
-    df = df.dropna(subset=["timestamp"]).reset_index(drop=True)
-    df.columns = df.columns.str.lower().str.strip()
+from charts.violin import get_violin_chart
+from charts.waterfall import get_waterfall_chart
+from charts.funnel import get_funnel_chart
+from charts.heatmap import get_heatmap_chart
+from charts.strip import get_strip_chart
 
-    return df
+# Fetch dataset from the database
+df = fetch_data()
 
-# Load the DataFrame
-df = load_log_data(log_file)
-required_columns = {"timestamp", "result_count", "search_duration"}
-if not required_columns.issubset(df.columns):
-    print(f"\u274c Error: Missing required columns: {required_columns - set(df.columns)}")
-    raise KeyError(f"Missing required columns: {required_columns - set(df.columns)}")
+# Initialize Dash app with Bootstrap
+app = dash.Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.BOOTSTRAP]
+)
 
-# Initialize Dash app
-app = dash.Dash(__name__, external_stylesheets=["https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"])
-
-
-# Define a route for the endpoint
-@app.server.route('/data.log')
-def serve_data():
-    """Serve the DataFrame as JSON."""
-    return jsonify(df.to_dict(orient='records'))
-
+# Define layout
 app.layout = html.Div([
-    create_navbar(),
+    create_navbar(),  # Navbar at the top
+
     html.Div([
-        html.H2("Daily Report", style={"text-align": "center", "margin-top": "80px"}),
-        html.Div(get_daily_graph(df) if not df.empty else html.P("No data available", style={"text-align": "center", "color": "red"})),
+        html.H2("Daily Report", className="text-center mt-4"),
+        get_daily_graph(df) if not df.empty else html.Div("No data available for Daily Report"),  # Handle empty DataFrame
 
-        html.H2("Weekly Report", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_weekly_graph(df) if not df.empty else html.P("No data available", style={"text-align": "center", "color": "red"})),
+        html.H2("Weekly Report", className="text-center mt-4"),
+        get_weekly_graph(df) if not df.empty else html.Div("No data available for Weekly Report"),  # Handle empty DataFrame
 
-        html.H2("90 Days Report", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_ninety_days_graph(df) if not df.empty else html.P("No data available", style={"text-align": "center", "color": "red"})),
+        html.H2("90 Days Report", className="text-center mt-4"),
+        get_ninety_days_graph(df) if not df.empty else html.Div("No data available for 90 Days Report"),  # Handle empty DataFrame
+    ], className="container my-4"),
 
-        html.H2("Violin Graph", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_violin_graph(df) if not df.empty else html.P("No data available", style={"text-align": "center", "color": "red"})),
+    html.Div([
+        html.H2("Additional Graphs", className="text-center mt-4"),
+        get_violin_chart(df) if not df.empty else html.Div("No data available for Violin Chart"),  # Handle empty DataFrame
+        get_waterfall_chart(df) if not df.empty else html.Div("No data available for Waterfall Chart"),  # Handle empty DataFrame
+        get_funnel_chart(df) if not df.empty else html.Div("No data available for Funnel Chart"),  # Handle empty DataFrame
+        get_heatmap_chart(df) if not df.empty else html.Div("No data available for Heatmap Chart"),  # Handle empty DataFrame
+        get_strip_chart(df) if not df.empty else html.Div("No data available for Strip Chart"),  # Handle empty DataFrame
+    ], className="container my-4")
 
-        html.H2("Strip Graph", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_strip_graph(df) if not df.empty else html.P("No data available", style={"text-align": "center", "color": "red"})),
+], className="w-100 overflow-hidden")
 
-        html.H2("Heatmap Graph", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_heatmap_graph(df) if not df.empty else html.P("No data available", style={"text-align": "center", "color": "red"})),
-
-        html.H2("Funnel Graph", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_funnel_graph(df) if not df.empty else html.P("No data available", style={"text-align": "center", "color": "red"})),
-
-        html.H2("Waterfall Graph", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_waterfall_graph(df) if not df.empty else html.P("No data available", style={"text-align": "center", "color": "red"})),
-
-        html.H2("Moving Average Graph", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_moving_average_graph()),
-
-        html.H2("Sine Wave Graph", style={"text-align": "center", "margin-top": "50px"}),
-        html.Div(get_sine_slider_graph()),
-
-    ], style={"padding": "20px"})
-], style={"width": "100vw", "overflow-x": "hidden"})
-
-# Register callbacks for the new graphs
-register_ma_callbacks(app)
-register_sine_callbacks(app)
-
+# Run the app
 if __name__ == "__main__":
     app.run_server(debug=True)
