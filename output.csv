@@ -1,0 +1,4 @@
+id,name.first,name.last,contact.emails[0],contact.emails[1],contact.phone,city,zipcode,order_id,date,items[0].product,items[0].price,items[1].product,items[1].price,product,price
+101,John,Doe,john.doe@example.com,j.doe@workmail.com,1234567890,New York,10001,A001,2025-06-20,Laptop,1200,Mouse,25,Laptop,1200
+101,John,Doe,john.doe@example.com,j.doe@workmail.com,1234567890,New York,10001,A001,2025-06-20,Laptop,1200,Mouse,25,Mouse,25
+101,John,Doe,john.doe@example.com,j.doe@workmail.com,1234567890,New York,10001,A002,2025-06-21,Keyboard,45,,,Keyboard,45
